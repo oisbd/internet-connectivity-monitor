@@ -1,0 +1,5 @@
+venv
+internet_log_*.csv
+internet_log_*_report.txt
+*.pyc
+*.pyc~
