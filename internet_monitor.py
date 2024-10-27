@@ -1,12 +1,13 @@
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import urllib.request
 import speedtest
 import csv
 import os
+import pytz
 
 # Configuration settings
-CHECK_INTERVAL = 180  # Time between checks in seconds
+CHECK_INTERVAL = 10  # Time between checks in seconds
 INTERNET_CHECK_TIMEOUT = 10  # Timeout for internet connectivity check in seconds
 SPEED_CHECK_URL = 'http://www.google.com'  # URL to check for internet connectivity
 MIN_DOWNLOAD_SPEED = 10  # Minimum acceptable download speed in Mbps
@@ -33,11 +34,12 @@ def get_filename():
     return datetime.now().strftime('internet_log_%Y-%m-%d.csv')
 
 def main():
+    dhaka_tz = pytz.timezone('Asia/Dhaka')
     prev_status = None
     down_start_time = None
     while True:
         current_status = check_internet()
-        timestamp = datetime.now()
+        timestamp = datetime.now(dhaka_tz)
         filename = get_filename()
         file_exists = os.path.isfile(filename)
         with open(filename, 'a', newline='') as csvfile:
@@ -79,6 +81,8 @@ def main():
         time.sleep(CHECK_INTERVAL)
 
 def generate_report(filename):
+    dhaka_tz = pytz.timezone('Asia/Dhaka')
+    
     with open(filename, 'r') as csvfile:
         reader = csv.DictReader(csvfile)
         down_intervals = []
@@ -116,14 +120,24 @@ def generate_report(filename):
                         upload_speed / 1e6 < MIN_UPLOAD_SPEED):
                         low_speeds.append(speed_data)
 
+        # Check if there's an ongoing downtime at the end of the file
+        if down_start_time is not None:
+            down_end_time = timestamp  # Use the last timestamp in the file
+            down_duration = down_end_time - down_start_time
+            down_intervals.append({
+                'start': down_start_time,
+                'end': down_end_time,
+                'duration': down_duration
+            })
+
         # Now, create the report
         report = ''
         report += f"Internet Connectivity Report for {filename}\n"
         report += "\nDowntime Intervals:\n"
         if down_intervals:
             for interval in down_intervals:
-                start = interval['start'].strftime('%Y-%m-%d %H:%M:%S')
-                end = interval['end'].strftime('%Y-%m-%d %H:%M:%S')
+                start = interval['start'].astimezone(dhaka_tz).strftime('%Y-%m-%d %I:%M:%S %p')
+                end = interval['end'].astimezone(dhaka_tz).strftime('%Y-%m-%d %I:%M:%S %p')
                 duration = str(interval['duration'])
                 report += f"- From {start} to {end}, Duration: {duration}\n"
         else:
@@ -132,7 +146,7 @@ def generate_report(filename):
         report += "\nLow Speed Intervals:\n"
         if low_speeds:
             for speed in low_speeds:
-                ts = speed['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                ts = speed['timestamp'].astimezone(dhaka_tz).strftime('%Y-%m-%d %I:%M:%S %p')
                 dl_speed_mbps = speed['download_speed_bps'] / 1e6
                 ul_speed_mbps = speed['upload_speed_bps'] / 1e6
                 report += f"- {ts}: Download {dl_speed_mbps:.2f} Mbps, Upload {ul_speed_mbps:.2f} Mbps\n"
@@ -150,7 +164,8 @@ def generate_report(filename):
         #     report += "No speed data recorded.\n"
 
         # Save the report to a text file
-        report_filename = filename.replace('.csv', '_report.txt')
+        report_timestamp = datetime.now(dhaka_tz).strftime('%Y-%m-%d_%I-%M-%S_%p')
+        report_filename = f"{filename.rsplit('.', 1)[0]}_{report_timestamp}_report.txt"
         with open(report_filename, 'w') as report_file:
             report_file.write(report)
         print(f"Report generated: {report_filename}")
